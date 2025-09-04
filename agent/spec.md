@@ -13,7 +13,7 @@ We model net interest as the sum of 3–4 **portfolio buckets** whose **effectiv
 **Buckets (recommended):**
 1. **Bills/FRN-like (SHORT)** — accrues at short rate with fast passthrough.  
 2. **Notes & Bonds (N&B)** — accrues at a curve blend with slow passthrough; includes premium/discount amortization implicitly.  
-3. **TIPS** — coupon on adjusted principal + monthly inflation accrual driven by CPI.  
+3. **TIPS** — coupon on adjusted principal + monthly inflation accrual driven by PCE inflation (annual input, monthly-ized).  
 4. **Other / Nonmarketable (OTHER)** — small residual (Savings Bonds, misc.); modeled as small % of GDP or % of debt.
 
 **Exclude** intragovernmental (GAS) groups when matching **net interest outlays**:
@@ -115,6 +115,9 @@ model:
   debt_public_initial:
     value: 28100000000000   # optional; else infer from calibration
     as_of: "2025-09-30"
+  nominal_gdp_initial:
+    value: 0                # latest nominal GDP level (USD)
+    as_of: "2025-09-30"
 
   # Bucket configuration
   buckets:
@@ -128,7 +131,7 @@ model:
       lag_half_life_months: 24
       share_initial: 0.60
     TIPS:
-      rate_source: "cpi_infl_m"  # monthly inflation for accrual
+      rate_source: "pce_infl"    # annual PCE inflation, monthly-ized for accrual
       lag_half_life_months: 1
       share_initial: 0.10
     OTHER:
@@ -147,9 +150,9 @@ macro_series:
   r2y:   {frequency: "M", values: {}}
   r5y:   {frequency: "M", values: {}}
   r10y:  {frequency: "M", values: {}}
-  cpi_infl_m: {frequency: "M", values: {}}   # monthly rate (e.g., 0.003 = 0.3% m/m)
-  primary_deficit: {frequency: "A", values: {}}  # USD level, annual -> monthly
-  nominal_gdp:     {frequency: "A", values: {}}  # USD level, annual -> monthly
+  pce_infl: {frequency: "A", values: {}}        # annual rate (e.g., 0.02 = 2% y/y) → monthly
+  primary_deficit: {frequency: "A", values: {}}  # % of GDP (e.g., 3.5 = 3.5%) → monthly
+  nominal_gdp_growth: {frequency: "A", values: {}}  # annual GDP growth → monthly
 
 options:
   interpolation:
@@ -178,7 +181,7 @@ options:
   `α = 1 - 0.5**(1/half_life_months)`;  
   `r_eff_bucket[t] = α*r_src[t] + (1-α)*r_eff_bucket[t-1]`.
 - **Bucket shares:** fixed from config or calibrated constants.  
-- **TIPS accrual:** monthly accrual `tips_accr[t] = tips_principal[t-1] * cpi_infl_m[t]`.  
+- **TIPS accrual:** monthly accrual `tips_accr[t] = tips_principal[t-1] * pce_infl_m[t]`.  
   - In top-down simplification, approximate `tips_principal ≈ share_TIPS * Debt[t-1]`.  
   - Optionally fit a scalar κ to IEOD history.  
 - **Other:** rule-based (`pct_gdp` or `pct_debt`), with parameter to fit.  
@@ -190,11 +193,11 @@ options:
 ## 5) Forecast Engine (`model.py`)
 
 ### 5.1 Monthly Step
-1. **Pull macro**: `r3m, r2y, r5y, r10y, cpi_infl_m, primary_deficit, nominal_gdp`.  
+1. **Pull macro**: `r3m, r2y, r5y, r10y, pce_infl (monthly-ized), primary_deficit_pct_gdp (A→M), nominal_gdp (level from initial + growth)`.  
 2. **Effective rates:**  
    - `r_SHORT[t]  = ema(r3m, hl_SHORT)`  
    - `r_NB[t]     = ema(wavg(r2y,r5y,r10y), hl_NB)`  
-   - `tips_acc[t] = cpi_infl_m[t]` (accrual; coupon optional as small constant)  
+   - `tips_acc[t] = pce_infl_m[t]` (monthly-ized from annual PCE; coupon optional as small constant)  
 3. **Bucket sizes:** `Debt[t-1] * share_bucket[t]` (shares constant or slow drift).  
 4. **Bucket interest:**
    - `Int_SHORT[t]  = r_SHORT[t]  * Debt[t-1] * share_SHORT[t] / 12`  
@@ -202,7 +205,7 @@ options:
    - `Int_TIPS[t]   = (tips_acc[t] + r_tips_coupon) * Debt[t-1] * share_TIPS[t] / 12` (default `r_tips_coupon = 0`)  
    - `Int_OTHER[t]  = other_rule(primary vars)` (e.g., `bps_gdp * GDP[t] / 10000 / 12`)  
 5. **Net interest:** `NetInt[t] = Int_SHORT + Int_NB + Int_TIPS + Int_OTHER`.  
-6. **Debt recursion:** `Debt[t] = Debt[t-1] + PrimaryDef[t] + NetInt[t]`.  
+6. **Debt recursion:** `Debt[t] = Debt[t-1] + PrimaryDef_level[t] + NetInt[t]`, where `PrimaryDef_level[t] = (primary_deficit_pct_gdp[y]/100) * GDP[t] / 12`.  
 7. **Effective portfolio rate:** `r_eff_port[t] = 12 * NetInt[t] / Debt[t-1]`.
 
 ### 5.2 Aggregation (`aggregate.py`)
@@ -255,9 +258,9 @@ One workbook per period (`results_cy.xlsx`, `results_fy.xlsx`) with tidy tabs:
 ### 7.1 Utilities (`io_utils.py`)
 - Load IEOD CSV with schema validation.  
 - Load `macro.yaml`, expand annual → monthly:
-  - **Rates**: annual to monthly via repeat or linear (configurable).  
-  - **Primary deficit**: annual → monthly by equal split or supplied seasonal vector.  
-  - **Nominal GDP**: annual level → monthly via linear interpolation of level.  
+  - **Rates**: annual to monthly via repeat or linear; for `pce_infl`, compute a flat monthly rate that compounds to the annual rate.  
+  - **Primary deficit (% of GDP)**: convert annual % of GDP to monthly levels via `deficit_m[t] = (deficit_pct_annual[y] / 100) * GDP_m[t] / 12`.  
+  - **Nominal GDP**: construct monthly GDP level using `nominal_gdp_initial` and applying `nominal_gdp_growth` (A→M compounding).  
 - Ensure monthly date index aligns to month-end.
 
 ### 7.2 Lag Filters (`transforms.py`)
@@ -288,7 +291,7 @@ CLI (or function) that:
 - `test_ingest.py`: IEOD load, GAS exclusion, monthly sums.  
 - `test_transforms.py`: half-life → α; EMA filter; CY/FY aggregation (edge months); %-of-GDP math.  
 - `test_calibrate.py`: calibration on synthetic data recovers known params within tolerance.  
-- `test_model.py`: constant-rate scenario produces closed-form results (e.g., geometric debt growth); TIPS accrual equals CPI path × principal share.  
+- `test_model.py`: constant-rate scenario produces closed-form results (e.g., geometric debt growth); TIPS accrual equals PCE-derived monthly inflation path × principal share.  
 - `test_aggregate.py`: aggregation matches manual calculations on toy data.
 
 **Integration**
@@ -315,11 +318,11 @@ CLI (or function) that:
 
 ```python
 # === Monthly loop ===
-Debt[t] = Debt[t-1] + PrimaryDef[t] + NetInt[t]
+Debt[t] = Debt[t-1] + PrimaryDef_level[t] + NetInt[t]
 
 r_short[t] = ema(r3m[t], alpha_short)
 r_nb[t]    = ema(wavg([r2y[t], r5y[t], r10y[t]], w), alpha_nb)
-tips_m[t]  = cpi_infl_m[t]
+tips_m[t]  = pce_infl_m[t]
 
 Int_SHORT = r_short[t] * Debt[t-1] * share_SHORT / 12
 Int_NB    = r_nb[t]    * Debt[t-1] * share_NB    / 12
@@ -327,6 +330,7 @@ Int_TIPS  = (tips_m[t] + r_tips_coupon) * Debt[t-1] * share_TIPS / 12  # default
 Int_OTHER = other_rule(params, GDP[t], Debt[t])
 
 NetInt[t] = Int_SHORT + Int_NB + Int_TIPS + Int_OTHER
-Debt[t]   = Debt[t-1] + PrimaryDef[t] + NetInt[t]
+PrimaryDef_level[t] = (primary_deficit_pct_gdp[y]/100) * GDP[t] / 12
+Debt[t]   = Debt[t-1] + PrimaryDef_level[t] + NetInt[t]
 r_eff[t]  = 12 * NetInt[t] / Debt[t-1]
 ```

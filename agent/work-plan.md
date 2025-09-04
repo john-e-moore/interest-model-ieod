@@ -48,7 +48,7 @@ project/
 - **Loaders**:
   - `load_ieod(path: Path) -> pd.DataFrame`: enforce columns, parse dates, drop nulls, exclude GAS groups: `ACCRUAL BASIS GAS EXPENSE`, `CASH BASIS GAS PAYMENTS`.
   - `load_macro_yaml(path: Path) -> dict`: read YAML and validate required sections.
-  - `expand_macro_series(cfg: dict) -> pd.DataFrame`: expand annual to monthly (repeat/linear per options), align to month-end index on `start..end`.
+  - `expand_macro_series(cfg: dict) -> pd.DataFrame`: expand annual to monthly (repeat/linear per options), align to month-end index on `start..end`. For `pce_infl` (A), compute a flat monthly rate compounding to the annual rate; construct monthly `nominal_gdp` level from `nominal_gdp_initial` and `nominal_gdp_growth` (A→M); convert `primary_deficit` (% of GDP) to monthly USD: `(pct/100) * GDP_m / 12`.
   - `load_fyoint_optional(path: Path = 'input/FYOINT.xlsx') -> Optional[pd.DataFrame]`: load if present for QA.
 - **Persistence**:
   - `save_parameters(params: dict, output_dir: Path) -> Path` writes `output/parameters_{timestamp}.json`.
@@ -76,9 +76,9 @@ project/
 
 #### 5) Forecast engine (`src/model.py`)
 - Monthly loop on grid `start..end`:
-  - Pull macro: `r3m, r2y, r5y, r10y, cpi_infl_m, primary_deficit, nominal_gdp`.
+  - Pull macro: `r3m, r2y, r5y, r10y, pce_infl (monthly-ized), primary_deficit_pct_gdp (A→M), nominal_gdp (level from initial + growth)`.
   - Compute effective rates with EMAs per calibrated half-lives:
-    - `r_SHORT = ema(r3m)`; `r_NB = ema(weighted_curve)`; `tips_acc = cpi_infl_m`.
+    - `r_SHORT = ema(r3m)`; `r_NB = ema(weighted_curve)`; `tips_acc = pce_infl_m`.
   - Bucket sizes: `Debt[t-1] * share_bucket[t]` (shares constant or slow drift per config).
   - Bucket interest:
     - `Int_SHORT = r_SHORT * Debt[t-1] * share_SHORT / 12`
@@ -86,7 +86,7 @@ project/
     - `Int_TIPS  = (tips_acc + r_tips_coupon) * Debt[t-1] * share_TIPS / 12` (default coupon 0)
     - `Int_OTHER = other_rule(params, GDP[t])` (e.g., `bps_gdp * GDP / 10000 / 12`)
   - Net interest and debt recursion:
-    - `NetInt = sum(bucket)`; `Debt[t] = Debt[t-1] + PrimaryDef[t] + NetInt[t]`.
+    - `NetInt = sum(bucket)`; `Debt[t] = Debt[t-1] + PrimaryDef_level[t] + NetInt[t]`, with `PrimaryDef_level[t] = (primary_deficit_pct_gdp[y]/100) * GDP[t] / 12`.
   - Effective portfolio rate: `r_eff = 12 * NetInt[t] / Debt[t-1]`.
 - Return monthly DataFrame with buckets, totals, `Debt`, `r_eff`.
 
@@ -119,9 +119,9 @@ project/
 #### 9) Testing (pytest)
 - Unit tests:
   - `test_ingest.py`: discovery of latest IEOD file; schema validation; GAS exclusion; monthly sums.
-  - `test_transforms.py`: half-life → alpha; EMA filter; CY/FY aggregation; % of GDP math; N&B weighted curve.
+  - `test_transforms.py`: half-life → alpha; EMA filter; CY/FY aggregation; % of GDP math; N&B weighted curve; annual→monthly compounding for PCE inflation and GDP growth.
   - `test_calibrate.py`: synthetic data recovers known params approximation; constraints respected.
-  - `test_model.py`: constant-rate scenario closed-form checks; TIPS accrual equals CPI × share × principal.
+  - `test_model.py`: constant-rate scenario closed-form checks; TIPS accrual equals PCE-derived monthly inflation × share × principal.
   - `test_aggregate.py`: CY/FY aggregations match manual calculations on toy data.
 - Integration:
   - `test_end_to_end.py`: tiny historical window (e.g., 2018–2022) ensures outputs exist, FY totals within tolerance vs IEOD, charts render.
@@ -134,7 +134,7 @@ project/
 - **FYOINT**: Optional QA input located at `input/FYOINT.xlsx`.
 
 ### Config schema (`input/macro.yaml`)
-- Implement per spec (time grid, bucket config, macro series, options). Validate required fields; support annual→monthly repeat or linear as configured.
+- Implement per spec (time grid, bucket config, macro series, options). Validate required fields; support annual→monthly repeat or linear as configured. Include `nominal_gdp_initial` (value/as_of), `nominal_gdp_growth` (A), `pce_infl` (A), and `primary_deficit` as % of GDP (A).
 
 ### Acceptance Criteria
 - Average historical FY error vs IEOD ≤ ~3% over 2015–2024 (allow a bit more in high-inflation years if TIPS coupon is omitted).

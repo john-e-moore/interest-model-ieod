@@ -1,4 +1,5 @@
 venv/
-input/
 output/
 *__pycache__/
+*.xlsx
+*.csv
