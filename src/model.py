@@ -20,10 +20,16 @@ def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dic
     alpha_s = transforms.half_life_to_alpha(hl_s)
     alpha_nb = transforms.half_life_to_alpha(hl_nb)
 
-    r_nb_raw = transforms.weighted_curve(macro_df['r2y'], macro_df['r5y'], macro_df['r10y'], [0.2, 0.4, 0.4])
-    r_short = transforms.ema(macro_df['r3m'], alpha_s)
+    # Ensure rate series are float decimals (annual for r_short/r_nb, monthly for tips_m)
+    r2y_s = macro_df['r2y'].astype(float)
+    r5y_s = macro_df['r5y'].astype(float)
+    r10y_s = macro_df['r10y'].astype(float)
+    r3m_s = macro_df['r3m'].astype(float)
+    tips_m = macro_df['pce_infl_m'].astype(float)
+
+    r_nb_raw = transforms.weighted_curve(r2y_s, r5y_s, r10y_s, [0.2, 0.4, 0.4])
+    r_short = transforms.ema(r3m_s, alpha_s)
     r_nb = transforms.ema(r_nb_raw, alpha_nb)
-    tips_m = macro_df['pce_infl_m']
 
     share_s = float(params.get('share_SHORT', 0.25))
     share_nb = float(params.get('share_NB', 0.60))
@@ -49,7 +55,7 @@ def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dic
         intn = r_nb.loc[ts] * debt_prev * s_nb / 12.0
         # TIPS accrual: monthly inflation (already monthly) plus optional coupon on adjusted principal
         intt = (tips_m.loc[ts] + r_tips_coupon/12.0) * debt_prev * s_t
-        into = (other_bps / 10000.0 / 12.0) * float(macro_df['nominal_gdp'].loc[ts])
+        into = (other_bps / 10000.0 / 12.0) * float(macro_df['nominal_gdp'].astype(float).loc[ts])
 
         total = int_s + intn + intt + into
         debt_curr = debt_prev + total  # primary deficit set to 0 for these core tests
