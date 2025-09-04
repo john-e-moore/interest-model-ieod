@@ -126,20 +126,25 @@ def expand_macro_series(cfg: dict[str, Any]) -> pd.DataFrame:
             return s
         raise ValueError(f"Unsupported frequency for {name}: {freq}")
 
-    r3m = get_series("r3m")
-    r2y = get_series("r2y")
-    r5y = get_series("r5y")
-    r10y = get_series("r10y")
+    # Rates provided in macro.yaml are percentages (e.g., 4.25 for 4.25%).
+    # Convert to decimals immediately for consistent downstream math.
+    r3m = get_series("r3m") / 100.0
+    r2y = get_series("r2y") / 100.0
+    r5y = get_series("r5y") / 100.0
+    r10y = get_series("r10y") / 100.0
 
     # Annual PCE inflation to monthly rate path
-    pce_a = get_series("pce_infl", default_freq="A").fillna(0.0)
+    # Annual PCE inflation is a percentage. Convert to decimal before compounding.
+    pce_a = (get_series("pce_infl", default_freq="A").fillna(0.0)) / 100.0
     pce_m = pce_a.apply(_annual_to_monthly_compounded)
 
     # Primary deficit (% of GDP) annual → monthly by forward-fill
-    prim_def_pct = get_series("primary_deficit", default_freq="A").fillna(0.0)
+    # Primary deficit is % of GDP; convert to decimal for later level conversion.
+    prim_def_pct = (get_series("primary_deficit", default_freq="A").fillna(0.0)) / 100.0
 
     # Nominal GDP: construct monthly level using initial level and annual growth
-    gdp_growth_a = get_series("nominal_gdp_growth", default_freq="A").fillna(0.0)
+    # Annual nominal GDP growth is a percentage; convert to decimal before compounding.
+    gdp_growth_a = (get_series("nominal_gdp_growth", default_freq="A").fillna(0.0)) / 100.0
     gdp_growth_m = gdp_growth_a.apply(_annual_to_monthly_compounded)
     gdp_initial = model.get("nominal_gdp_initial", {}).get("value", 0.0)
     # Build a monthly gdp level by compounding
