@@ -3,3 +3,6 @@ output/
 *__pycache__/
 *.xlsx
 *.csv
+.pytest_cache/
+*.pyc
+.coverage

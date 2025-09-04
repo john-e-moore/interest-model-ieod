@@ -1,0 +1,32 @@
+meta:
+  scenario_name: "test"
+  author: "pytest"
+model:
+  start: "2018-01-31"
+  now:   "2018-12-31"
+  end:   "2019-12-31"
+  freq: "M"
+  base_currency: "USD"
+  nominal_gdp_units: "USD"
+  debt_public_initial: { value: 1000000, as_of: "2018-12-31" }
+  nominal_gdp_initial: { value: 1000000, as_of: "2018-12-31" }
+  buckets:
+    SHORT: { rate_source: "r3m", lag_half_life_months: 3, share_initial: 0.25 }
+    N_BONDS: { rate_source: ["r2y","r5y","r10y"], rate_weights: [0.2,0.4,0.4], lag_half_life_months: 24, share_initial: 0.6 }
+    TIPS: { rate_source: "pce_infl", lag_half_life_months: 1, share_initial: 0.1 }
+    OTHER: { rule: "pct_gdp", pct_gdp_bps: 5 }
+macro_series:
+  r3m:   {frequency: "M", values: {}}
+  r2y:   {frequency: "M", values: {}}
+  r5y:   {frequency: "M", values: {}}
+  r10y:  {frequency: "M", values: {}}
+  pce_infl: {frequency: "A", values: {}}
+  primary_deficit: {frequency: "A", values: {}}
+  nominal_gdp_growth: {frequency: "A", values: {}}
+options:
+  interpolation:
+    annual_to_monthly: "repeat"
+  chart_units_billions: true
+  random_seed: 42
+
+
