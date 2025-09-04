@@ -151,9 +151,9 @@ def expand_macro_series(cfg: dict[str, Any]) -> pd.DataFrame:
     gdp = pd.Series(index=idx, dtype=float)
     level = float(gdp_initial)
     for i, ts in enumerate(idx):
-        # apply monthly growth for that calendar year
-        y = ts.year
-        monthly_g = gdp_growth_m.loc[ts]
+        # apply monthly growth; guard against any residual NaNs
+        monthly_g_val = gdp_growth_m.loc[ts]
+        monthly_g = float(monthly_g_val) if pd.notna(monthly_g_val) else 0.0
         level = level * (1.0 + monthly_g)
         gdp.iloc[i] = level
 
