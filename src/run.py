@@ -62,13 +62,20 @@ def main(config_path: str = 'input/macro.yaml', input_dir: str = 'input', output
     if 'nominal_gdp' in macro_df.columns:
         monthly = monthly.join(macro_df[['nominal_gdp']], how='left')
 
+    # Slice outputs to now..end; keep full macro_df for calibration inputs in workbooks if desired,
+    # but slice macro_df for output CSVs to match emitted period.
+    now_ts = pd.to_datetime(cfg['model']['now'])
+    end_ts = pd.to_datetime(cfg['model']['end'])
+    monthly_emit = monthly.loc[now_ts:end_ts]
+    macro_emit = macro_df.loc[now_ts:end_ts]
+
     logger.info('Aggregating to CY and FY...')
-    cy = aggregate.aggregate_model_cy(monthly)
-    fy = aggregate.aggregate_model_fy(monthly)
+    cy = aggregate.aggregate_model_cy(monthly_emit)
+    fy = aggregate.aggregate_model_fy(monthly_emit)
 
     logger.info('Writing outputs to %s...', run_dir)
     charts.ensure_output_dirs(run_dir)
-    charts.write_workbooks(cy, fy, macro_df, params, run_dir)
+    charts.write_workbooks(cy, fy, macro_emit, params, run_dir)
     charts.plot_basic_charts(cy, fy, run_dir)
 
     # Copy inputs into run_dir/inputs
