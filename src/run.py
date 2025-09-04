@@ -10,21 +10,12 @@ import time
 
 import pandas as pd
 
-# Support both package usage (python -m src.run) and direct module import (import run)
-try:  # package-relative when running as src.run
-    from . import io_utils  # type: ignore
-    from . import transforms  # type: ignore
-    from . import calibrate  # type: ignore
-    from . import model as model_mod  # type: ignore
-    from . import aggregate  # type: ignore
-    from . import charts  # type: ignore
-except Exception:  # absolute import when PYTHONPATH includes src
-    import io_utils  # type: ignore
-    import transforms  # type: ignore
-    import calibrate  # type: ignore
-    import model as model_mod  # type: ignore
-    import aggregate  # type: ignore
-    import charts  # type: ignore
+from . import io_utils  # type: ignore
+from . import transforms  # type: ignore
+from . import calibrate  # type: ignore
+from . import model as model_mod  # type: ignore
+from . import aggregate  # type: ignore
+from . import charts  # type: ignore
 
 
 def main(config_path: str = 'input/macro.yaml', input_dir: str = 'input', output_dir: str = 'output', calibrate: bool = True, use_cached_params: bool = False) -> None:

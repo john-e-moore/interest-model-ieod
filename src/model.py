@@ -6,7 +6,7 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
-import transforms
+from . import transforms
 
 
 def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dict[str, Any]) -> pd.DataFrame:
