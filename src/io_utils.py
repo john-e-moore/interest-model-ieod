@@ -120,9 +120,9 @@ def expand_macro_series(cfg: dict[str, Any]) -> pd.DataFrame:
                 y = pd.to_datetime(k).year
                 s.loc[pd.Timestamp(year=y, month=12, day=31)] = float(v)
             s = s.sort_index()
-            # Expand to monthly by repeat
+            # Expand to monthly by repeat, fill forward then back to cover full index span
             s = s.reindex(pd.date_range(start=idx.min(), end=idx.max(), freq="YE"))
-            s = s.reindex(idx, method="ffill")
+            s = s.reindex(idx, method="ffill").bfill()
             return s
         raise ValueError(f"Unsupported frequency for {name}: {freq}")
 
