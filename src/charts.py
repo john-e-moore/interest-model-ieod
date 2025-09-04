@@ -10,6 +10,7 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 
 
 def ensure_output_dirs(base: str | Path) -> None:
@@ -44,10 +45,13 @@ def write_workbooks(cy: pd.DataFrame, fy: pd.DataFrame, macro_df: pd.DataFrame, 
     (spreadsheets_dir / 'macro_inputs_fy.csv').write_text(macro_df.to_csv(index=True))
 
 
-def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path) -> None:
+def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path, as_percent: bool = False) -> None:
     plt.figure()
     df[y].plot()
     plt.title(title)
+    ax = plt.gca()
+    if as_percent:
+        ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
     plt.tight_layout()
     plt.savefig(out)
     plt.close()
@@ -56,10 +60,16 @@ def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path) -> None:
 def plot_basic_charts(cy: pd.DataFrame, fy: pd.DataFrame, base: str | Path) -> None:
     base = Path(base)
     vis_dir = base / 'visualizations'
-    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=vis_dir / 'eff_rate_cy.png')
-    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=vis_dir / 'eff_rate_fy.png')
+    # Effective rate (percentage)
+    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=vis_dir / 'eff_rate_cy.png', as_percent=True)
+    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=vis_dir / 'eff_rate_fy.png', as_percent=True)
     _plot_line(cy, x='year', y='interest_total', title='Total Interest CY', out=vis_dir / 'total_interest_cy_levels.png')
     _plot_line(fy, x='year', y='interest_total', title='Total Interest FY', out=vis_dir / 'total_interest_fy_levels.png')
+    # Total interest as % of GDP (percentage)
+    if 'interest_pct_gdp' in cy.columns:
+        _plot_line(cy, x='year', y='interest_pct_gdp', title='Total Interest CY (% of GDP)', out=vis_dir / 'total_interest_cy_pctgdp.png', as_percent=True)
+    if 'interest_pct_gdp' in fy.columns:
+        _plot_line(fy, x='year', y='interest_pct_gdp', title='Total Interest FY (% of GDP)', out=vis_dir / 'total_interest_fy_pctgdp.png', as_percent=True)
 
 
 
