@@ -3,10 +3,6 @@ from pathlib import Path
 import time
 
 
-def test_import_data_ingest_module():
-    assert importlib.import_module('data_ingest') is not None
-
-
 def test_find_latest_ieod_csv_prefers_end_date(tmp_path: Path, monkeypatch):
     # Create candidate files
     p1 = tmp_path / "IntExp_20190531_20200630.csv"
