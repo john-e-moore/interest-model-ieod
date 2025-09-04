@@ -7,6 +7,8 @@ from typing import Dict, Any
 import json
 
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
@@ -33,6 +35,18 @@ def write_workbooks(cy: pd.DataFrame, fy: pd.DataFrame, macro_df: pd.DataFrame, 
         fy.to_excel(xw, sheet_name='summary')
         macro_df.to_excel(xw, sheet_name='macro_inputs')
         pd.DataFrame({'param': list(params.keys()), 'value': list(params.values())}).to_excel(xw, sheet_name='parameters', index=False)
+
+    # Also write individual CSVs for summary and macro_inputs in each spreadsheets folder
+    cy_csv_dir = base / 'calendar_year' / 'spreadsheets'
+    fy_csv_dir = base / 'fiscal_year' / 'spreadsheets'
+    cy_csv_dir.mkdir(parents=True, exist_ok=True)
+    fy_csv_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save CSVs
+    (cy_csv_dir / 'summary_cy.csv').write_text(cy.to_csv(index=True))
+    (fy_csv_dir / 'summary_fy.csv').write_text(fy.to_csv(index=True))
+    (cy_csv_dir / 'macro_inputs_cy.csv').write_text(macro_df.to_csv(index=True))
+    (fy_csv_dir / 'macro_inputs_fy.csv').write_text(macro_df.to_csv(index=True))
 
 
 def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path) -> None:
