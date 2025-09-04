@@ -45,13 +45,18 @@ def write_workbooks(cy: pd.DataFrame, fy: pd.DataFrame, macro_df: pd.DataFrame, 
     (spreadsheets_dir / 'macro_inputs_fy.csv').write_text(macro_df.to_csv(index=True))
 
 
-def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path, as_percent: bool = False) -> None:
+def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path, as_percent: bool = False, xlim: tuple | None = None) -> None:
     plt.figure()
     df[y].plot()
     plt.title(title)
     ax = plt.gca()
     if as_percent:
         ax.yaxis.set_major_formatter(PercentFormatter(xmax=1.0))
+    if xlim is not None:
+        try:
+            ax.set_xlim(xlim)
+        except Exception:
+            pass
     plt.tight_layout()
     plt.savefig(out)
     plt.close()
@@ -60,16 +65,19 @@ def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path, as_perce
 def plot_basic_charts(cy: pd.DataFrame, fy: pd.DataFrame, base: str | Path) -> None:
     base = Path(base)
     vis_dir = base / 'visualizations'
+    # Determine x-axis limits from data (already sliced to now..end upstream)
+    cy_xlim = (int(cy.index.min()), int(cy.index.max())) if not cy.empty else None
+    fy_xlim = (int(fy.index.min()), int(fy.index.max())) if not fy.empty else None
     # Effective rate (percentage)
-    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=vis_dir / 'eff_rate_cy.png', as_percent=True)
-    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=vis_dir / 'eff_rate_fy.png', as_percent=True)
-    _plot_line(cy, x='year', y='interest_total', title='Total Interest CY', out=vis_dir / 'total_interest_cy_levels.png')
-    _plot_line(fy, x='year', y='interest_total', title='Total Interest FY', out=vis_dir / 'total_interest_fy_levels.png')
+    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=vis_dir / 'eff_rate_cy.png', as_percent=True, xlim=cy_xlim)
+    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=vis_dir / 'eff_rate_fy.png', as_percent=True, xlim=fy_xlim)
+    _plot_line(cy, x='year', y='interest_total', title='Total Interest CY', out=vis_dir / 'total_interest_cy_levels.png', xlim=cy_xlim)
+    _plot_line(fy, x='year', y='interest_total', title='Total Interest FY', out=vis_dir / 'total_interest_fy_levels.png', xlim=fy_xlim)
     # Total interest as % of GDP (percentage)
     if 'interest_pct_gdp' in cy.columns:
-        _plot_line(cy, x='year', y='interest_pct_gdp', title='Total Interest CY (% of GDP)', out=vis_dir / 'total_interest_cy_pctgdp.png', as_percent=True)
+        _plot_line(cy, x='year', y='interest_pct_gdp', title='Total Interest CY (% of GDP)', out=vis_dir / 'total_interest_cy_pctgdp.png', as_percent=True, xlim=cy_xlim)
     if 'interest_pct_gdp' in fy.columns:
-        _plot_line(fy, x='year', y='interest_pct_gdp', title='Total Interest FY (% of GDP)', out=vis_dir / 'total_interest_fy_pctgdp.png', as_percent=True)
+        _plot_line(fy, x='year', y='interest_pct_gdp', title='Total Interest FY (% of GDP)', out=vis_dir / 'total_interest_fy_pctgdp.png', as_percent=True, xlim=fy_xlim)
 
 
 
