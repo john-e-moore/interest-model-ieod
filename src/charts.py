@@ -15,18 +15,17 @@ import matplotlib.pyplot as plt
 def ensure_output_dirs(base: str | Path) -> None:
     base = Path(base)
     for sub in [
-        base / 'calendar_year' / 'spreadsheets',
-        base / 'calendar_year' / 'visualizations',
-        base / 'fiscal_year' / 'spreadsheets',
-        base / 'fiscal_year' / 'visualizations',
+        base / 'spreadsheets',
+        base / 'visualizations',
     ]:
         sub.mkdir(parents=True, exist_ok=True)
 
 
 def write_workbooks(cy: pd.DataFrame, fy: pd.DataFrame, macro_df: pd.DataFrame, params: Dict[str, Any], base: str | Path) -> None:
     base = Path(base)
-    cy_path = base / 'calendar_year' / 'spreadsheets' / 'results_cy.xlsx'
-    fy_path = base / 'fiscal_year' / 'spreadsheets' / 'results_fy.xlsx'
+    spreadsheets_dir = base / 'spreadsheets'
+    cy_path = spreadsheets_dir / 'results_cy.xlsx'
+    fy_path = spreadsheets_dir / 'results_fy.xlsx'
     with pd.ExcelWriter(cy_path, engine='openpyxl') as xw:
         cy.to_excel(xw, sheet_name='summary')
         macro_df.to_excel(xw, sheet_name='macro_inputs')
@@ -37,16 +36,12 @@ def write_workbooks(cy: pd.DataFrame, fy: pd.DataFrame, macro_df: pd.DataFrame, 
         pd.DataFrame({'param': list(params.keys()), 'value': list(params.values())}).to_excel(xw, sheet_name='parameters', index=False)
 
     # Also write individual CSVs for summary and macro_inputs in each spreadsheets folder
-    cy_csv_dir = base / 'calendar_year' / 'spreadsheets'
-    fy_csv_dir = base / 'fiscal_year' / 'spreadsheets'
-    cy_csv_dir.mkdir(parents=True, exist_ok=True)
-    fy_csv_dir.mkdir(parents=True, exist_ok=True)
-
+    spreadsheets_dir.mkdir(parents=True, exist_ok=True)
     # Save CSVs
-    (cy_csv_dir / 'summary_cy.csv').write_text(cy.to_csv(index=True))
-    (fy_csv_dir / 'summary_fy.csv').write_text(fy.to_csv(index=True))
-    (cy_csv_dir / 'macro_inputs_cy.csv').write_text(macro_df.to_csv(index=True))
-    (fy_csv_dir / 'macro_inputs_fy.csv').write_text(macro_df.to_csv(index=True))
+    (spreadsheets_dir / 'summary_cy.csv').write_text(cy.to_csv(index=True))
+    (spreadsheets_dir / 'summary_fy.csv').write_text(fy.to_csv(index=True))
+    (spreadsheets_dir / 'macro_inputs_cy.csv').write_text(macro_df.to_csv(index=True))
+    (spreadsheets_dir / 'macro_inputs_fy.csv').write_text(macro_df.to_csv(index=True))
 
 
 def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path) -> None:
@@ -60,10 +55,11 @@ def _plot_line(df: pd.DataFrame, x: str, y: str, title: str, out: Path) -> None:
 
 def plot_basic_charts(cy: pd.DataFrame, fy: pd.DataFrame, base: str | Path) -> None:
     base = Path(base)
-    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=base / 'calendar_year' / 'visualizations' / 'eff_rate_cy.png')
-    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=base / 'fiscal_year' / 'visualizations' / 'eff_rate_fy.png')
-    _plot_line(cy, x='year', y='interest_total', title='Total Interest CY', out=base / 'calendar_year' / 'visualizations' / 'total_interest_cy_levels.png')
-    _plot_line(fy, x='year', y='interest_total', title='Total Interest FY', out=base / 'fiscal_year' / 'visualizations' / 'total_interest_fy_levels.png')
+    vis_dir = base / 'visualizations'
+    _plot_line(cy, x='year', y='r_eff', title='Effective Rate CY', out=vis_dir / 'eff_rate_cy.png')
+    _plot_line(fy, x='year', y='r_eff', title='Effective Rate FY', out=vis_dir / 'eff_rate_fy.png')
+    _plot_line(cy, x='year', y='interest_total', title='Total Interest CY', out=vis_dir / 'total_interest_cy_levels.png')
+    _plot_line(fy, x='year', y='interest_total', title='Total Interest FY', out=vis_dir / 'total_interest_fy_levels.png')
 
 
 

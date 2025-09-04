@@ -177,8 +177,7 @@ def load_fyoint_optional(path: str | Path = "input/FYOINT.xlsx") -> Optional[pd.
 def save_parameters(params: dict[str, Any], output_dir: str | Path) -> Path:
     outdir = Path(output_dir)
     outdir.mkdir(parents=True, exist_ok=True)
-    ts = pd.Timestamp.utcnow().strftime("%Y%m%dT%H%M%SZ")
-    outpath = outdir / f"parameters_{ts}.json"
+    outpath = outdir / "parameters.json"
     with open(outpath, "w", encoding="utf-8") as f:
         json.dump(params, f, indent=2, sort_keys=True)
     return outpath

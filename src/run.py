@@ -32,9 +32,13 @@ def main(config_path: str = 'input/macro.yaml', input_dir: str = 'input', output
     logger.info('Building IEOD monthly totals...')
     ieod_series = transforms.build_ieod_monthly_total(df_ieod, cfg['model']['start'], cfg['model']['now'])
 
+    # Create timestamped run directory once for this run
+    ts = pd.Timestamp.utcnow().strftime('%Y%m%dT%H%M%SZ')
+    run_dir = Path(output_dir) / ts
+
     logger.info('Calibrating parameters...' if calibrate else 'Using default parameters...')
     if calibrate:
-        params = calibrate_params_wrapper(ieod_series, macro_df, cfg, output_dir)
+        params = calibrate_params_wrapper(ieod_series, macro_df, cfg, str(run_dir))
     else:
         params = {
             'hl_SHORT': cfg.get('model', {}).get('buckets', {}).get('SHORT', {}).get('lag_half_life_months', 3.0),
@@ -55,16 +59,40 @@ def main(config_path: str = 'input/macro.yaml', input_dir: str = 'input', output
     cy = aggregate.aggregate_model_cy(monthly)
     fy = aggregate.aggregate_model_fy(monthly)
 
-    logger.info('Writing outputs...')
-    charts.ensure_output_dirs(output_dir)
-    charts.write_workbooks(cy, fy, macro_df, params, output_dir)
-    charts.plot_basic_charts(cy, fy, output_dir)
+    logger.info('Writing outputs to %s...', run_dir)
+    charts.ensure_output_dirs(run_dir)
+    charts.write_workbooks(cy, fy, macro_df, params, run_dir)
+    charts.plot_basic_charts(cy, fy, run_dir)
+
+    # Copy inputs into run_dir/inputs
+    inputs_dir = run_dir / 'inputs'
+    inputs_dir.mkdir(parents=True, exist_ok=True)
+    import shutil as _shutil
+    # Copy macro.yaml
+    try:
+        _shutil.copy2(str(Path(config_path)), str(inputs_dir / Path(config_path).name))
+    except Exception:
+        pass
+    # Copy IEOD CSV
+    try:
+        _shutil.copy2(str(ieod_path), str(inputs_dir / ieod_path.name))
+    except Exception:
+        pass
+    # Copy FYOINT.xlsx if present
+    fyoint_path = Path(input_dir) / 'FYOINT.xlsx'
+    if fyoint_path.exists():
+        try:
+            _shutil.copy2(str(fyoint_path), str(inputs_dir / 'FYOINT.xlsx'))
+        except Exception:
+            pass
 
     logger.info('Done in %.2fs', time.time() - t0)
 
 
 def calibrate_params_wrapper(ieod_series: pd.Series, macro_df: pd.DataFrame, cfg: dict[str, Any], output_dir: str) -> dict[str, Any]:
     params = calibrate.calibrate_params(ieod_series, macro_df, cfg)
+    # Save parameters in the provided output directory (run_dir)
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
     io_utils.save_parameters(params, output_dir)
     return params
 
