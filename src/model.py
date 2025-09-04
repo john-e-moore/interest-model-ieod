@@ -14,7 +14,8 @@ except ImportError: # pytest.ini compatibility
 
 def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dict[str, Any]) -> pd.DataFrame:
     idx = macro_df.index
-    debt0 = float(config.get('model', {}).get('debt_public_initial', {}).get('value', 0.0))
+    debt0_spec = config.get('model', {}).get('debt_public_initial', {})
+    debt0 = float(debt0_spec.get('value', 0.0))
     if debt0 <= 0:
         debt0 = float(macro_df['nominal_gdp'].iloc[0])
 
@@ -48,6 +49,8 @@ def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dic
     netint = pd.Series(index=idx, dtype=float)
     r_eff = pd.Series(index=idx, dtype=float)
 
+    # If a debt as_of is provided, ensure the starting state aligns closely with now; for now,
+    # we treat provided value as the starting stock at the first index point.
     debt_prev = debt0
     for t, ts in enumerate(idx):
         s_s = share_s
