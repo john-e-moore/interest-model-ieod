@@ -6,7 +6,10 @@ from typing import Dict, Any
 import pandas as pd
 import numpy as np
 
-from . import transforms
+try:
+    from . import transforms
+except ImportError: # pytest.ini compatibility
+    import transforms
 
 
 def forecast_monthly(macro_df: pd.DataFrame, params: Dict[str, Any], config: Dict[str, Any]) -> pd.DataFrame:
