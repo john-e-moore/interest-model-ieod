@@ -19,12 +19,11 @@ def test_outputs_directories_and_files_created(tmp_path: Path):
     charts.write_workbooks(cy, fy, pd.DataFrame(), params, outdir)
     charts.plot_basic_charts(cy, fy, outdir)
 
-    # Assert directory structure and files
-    assert (outdir / 'calendar_year' / 'spreadsheets' / 'results_cy.xlsx').exists()
-    assert (outdir / 'fiscal_year' / 'spreadsheets' / 'results_fy.xlsx').exists()
+    # Assert directory structure and files (flat structure under output root)
+    assert (outdir / 'spreadsheets' / 'results_cy.xlsx').exists()
+    assert (outdir / 'spreadsheets' / 'results_fy.xlsx').exists()
     # Some charts
-    assert any(p.suffix == '.png' for p in (outdir / 'calendar_year' / 'visualizations').glob('*.png'))
-    assert any(p.suffix == '.png' for p in (outdir / 'fiscal_year' / 'visualizations').glob('*.png'))
+    assert any((outdir / 'visualizations').glob('*.png'))
 
 
 def test_run_main_creates_outputs_with_default_params(tmp_path: Path, fixtures_dir: Path):
@@ -45,9 +44,13 @@ def test_run_main_creates_outputs_with_default_params(tmp_path: Path, fixtures_d
     cfg_path = fixtures_dir / 'macro.yaml'
     run.main(config_path=str(cfg_path), input_dir=str(input_dir), output_dir=str(outdir), calibrate=False)
 
-    assert (outdir / 'calendar_year' / 'spreadsheets' / 'results_cy.xlsx').exists()
-    assert (outdir / 'fiscal_year' / 'spreadsheets' / 'results_fy.xlsx').exists()
-    assert any((outdir / 'calendar_year' / 'visualizations').glob('*.png'))
-    assert any((outdir / 'fiscal_year' / 'visualizations').glob('*.png'))
+    # Find timestamped run directory under the provided output directory
+    run_dirs = [p for p in outdir.iterdir() if p.is_dir()]
+    assert run_dirs, "No run directory created under output"
+    run_dir = run_dirs[0]
+
+    assert (run_dir / 'spreadsheets' / 'results_cy.xlsx').exists()
+    assert (run_dir / 'spreadsheets' / 'results_fy.xlsx').exists()
+    assert any((run_dir / 'visualizations').glob('*.png'))
 
 

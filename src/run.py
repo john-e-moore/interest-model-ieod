@@ -10,13 +10,20 @@ import time
 
 import pandas as pd
 
-from . import io_utils  # type: ignore
-from . import transforms  # type: ignore
-from . import calibrate  # type: ignore
-from . import model as model_mod  # type: ignore
-from . import aggregate  # type: ignore
-from . import charts  # type: ignore
-
+try:
+    from . import io_utils  # type: ignore
+    from . import transforms  # type: ignore
+    from . import calibrate  # type: ignore
+    from . import model as model_mod  # type: ignore
+    from . import aggregate  # type: ignore
+    from . import charts  # type: ignore
+except ImportError: # pytest.ini compatibility
+    import io_utils  # type: ignore
+    import transforms  # type: ignore
+    import calibrate  # type: ignore
+    import model as model_mod  # type: ignore
+    import aggregate  # type: ignore
+    import charts  # type: ignore
 
 def main(config_path: str = 'input/macro.yaml', input_dir: str = 'input', output_dir: str = 'output', calibrate: bool = True, use_cached_params: bool = False) -> None:
     t0 = time.time()

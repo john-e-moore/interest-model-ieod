@@ -7,7 +7,10 @@ import itertools
 import numpy as np
 import pandas as pd
 
-from . import transforms
+try:
+    from . import transforms
+except ImportError: # pytest.ini compatibility
+    import transforms
 
 
 def _design_matrix(macro_df: pd.DataFrame, hl_short: float, hl_nb: float) -> tuple[pd.DataFrame, float, float]:
