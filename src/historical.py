@@ -17,8 +17,12 @@ from pathlib import Path
 import argparse
 import re
 from typing import Optional
+import shutil
 
 import pandas as pd
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 
 # -----------------------------
@@ -364,6 +368,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also write aggregated tables as temp_agg_*.csv",
     )
+    p.add_argument(
+        "--write-final",
+        action="store_true",
+        help="Write final outputs (CSVs, Excel, charts, source copies) to output/historical",
+    )
     return p
 
 
@@ -411,6 +420,140 @@ def main(argv: Optional[list[str]] = None) -> None:
         for name, tdf in tables.items():
             outp = write_temp_csv(tdf, f"temp_{name}.csv", paths.spreadsheets_dir)
             print(f"Wrote aggregation CSV: {outp}")
+
+    if getattr(args, "write_final", False):
+        # Prepare data
+        gdp_path = Path(paths.input_dir) / "GDP.csv"
+        gdp_monthly = load_and_expand_gdp(gdp_path)
+        joined = join_gdp(df1, gdp_monthly)
+        tables = build_aggregations(joined)
+
+        # Output folders
+        base_out = Path.cwd() / "output" / "historical"
+        spreadsheets_dir = base_out / "spreadsheets"
+        viz_dir = base_out / "visualizations"
+        src_dir = base_out / "source_data"
+        spreadsheets_dir.mkdir(parents=True, exist_ok=True)
+        viz_dir.mkdir(parents=True, exist_ok=True)
+        src_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write CSVs and Excel workbook
+        write_csvs(tables, spreadsheets_dir)
+        excel_path = spreadsheets_dir / "historical_interest.xlsx"
+        write_excel(tables, excel_path)
+
+        # Charts
+        plot_line_and_area_charts(tables, viz_dir)
+
+        # Copy source data
+        latest_interest = find_latest_interest_file(paths.input_dir)
+        copy_source_data([latest_interest, gdp_path], src_dir)
+        print(f"Wrote final outputs to {base_out}")
+
+
+# -----------------------------
+# Final writers and charts (Step 5)
+# -----------------------------
+
+def write_csvs(tables: dict[str, pd.DataFrame], out_dir: Path | str) -> None:
+    out_p = Path(out_dir)
+    out_p.mkdir(parents=True, exist_ok=True)
+    name_map = {
+        "summary_cy": "summary_cy.csv",
+        "summary_fy": "summary_fy.csv",
+        "by_month_cy": "by_month_cy.csv",
+        "by_month_fy": "by_month_fy.csv",
+        "by_type_cy": "by_type_cy.csv",
+        "by_type_fy": "by_type_fy.csv",
+    }
+    for key, df in tables.items():
+        fname = name_map.get(key, f"{key}.csv")
+        df.to_csv(out_p / fname, index=False)
+
+
+def write_excel(tables: dict[str, pd.DataFrame], excel_path: Path | str) -> None:
+    excel_p = Path(excel_path)
+    excel_p.parent.mkdir(parents=True, exist_ok=True)
+    with pd.ExcelWriter(excel_p, engine="openpyxl") as xw:
+        for key, df in tables.items():
+            sheet = key[:31] if key else "sheet"
+            df.to_excel(xw, sheet_name=sheet, index=False)
+
+
+def _line_plot(df: pd.DataFrame, x_col: str, y_col: str, title: str, out_path: Path) -> None:
+    plt.figure()
+    plt.plot(df[x_col], df[y_col])
+    plt.title(title)
+    plt.xlabel(x_col)
+    plt.ylabel("")
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(out_path)
+    plt.close()
+
+
+def _stacked_area(df: pd.DataFrame, index_col: str, category_col: str, value_col: str, title: str, out_path: Path) -> None:
+    pivot = df.pivot_table(index=index_col, columns=category_col, values=value_col, aggfunc="sum").sort_index()
+    pivot = pivot.fillna(0.0)
+    # Stacked area requires each series to be either all >=0 or all <=0.
+    def _has_mixed_sign(s: pd.Series) -> bool:
+        return (s.gt(0).any() and s.lt(0).any())
+    mixed = any(_has_mixed_sign(pivot[c]) for c in pivot.columns)
+    if mixed:
+        # Skip plot when not meaningful to avoid errors.
+        return
+    plt.figure()
+    pivot.plot.area()
+    plt.title(title)
+    plt.xlabel(index_col)
+    plt.ylabel("")
+    plt.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.savefig(out_path)
+    plt.close()
+
+
+def plot_line_and_area_charts(tables: dict[str, pd.DataFrame], viz_dir: Path | str) -> None:
+    viz_p = Path(viz_dir)
+    viz_p.mkdir(parents=True, exist_ok=True)
+    # Lines: Interest Expense (billions) vs Year (CY and FY)
+    if "summary_cy" in tables:
+        df = tables["summary_cy"].dropna(subset=["Interest Expense (billions)"])
+        df = df[df["Calendar Year"] != 2025]
+        _line_plot(df, "Calendar Year", "Interest Expense (billions)", "Interest Expense (billions)", viz_p / "interest_billions_cy.png")
+        if "Interest Expense (% GDP)" in df.columns:
+            _line_plot(df, "Calendar Year", "Interest Expense (% GDP)", "Interest Expense (% GDP)", viz_p / "interest_pct_gdp_cy.png")
+    if "summary_fy" in tables:
+        df = tables["summary_fy"].dropna(subset=["Interest Expense (billions)"])
+        df = df[df["Fiscal Year"] != 2025]
+        _line_plot(df, "Fiscal Year", "Interest Expense (billions)", "Interest Expense (billions)", viz_p / "interest_billions_fy.png")
+        if "Interest Expense (% GDP)" in df.columns:
+            _line_plot(df, "Fiscal Year", "Interest Expense (% GDP)", "Interest Expense (% GDP)", viz_p / "interest_pct_gdp_fy.png")
+
+    # Stacked areas: by type CY and FY (billions and % GDP)
+    if "by_type_cy" in tables:
+        btc = tables["by_type_cy"].copy()
+        btc = btc[btc["Calendar Year"] != 2025]
+        if "Interest Expense (billions)" in btc.columns:
+            _stacked_area(btc, "Calendar Year", "Expense Type Description", "Interest Expense (billions)", "Interest Expense (billions)", viz_p / "by_type_billions_cy.png")
+        if "Interest Expense (% GDP)" in btc.columns:
+            _stacked_area(btc, "Calendar Year", "Expense Type Description", "Interest Expense (% GDP)", "Interest Expense (% GDP)", viz_p / "by_type_pct_gdp_cy.png")
+    if "by_type_fy" in tables:
+        btf = tables["by_type_fy"].copy()
+        btf = btf[btf["Fiscal Year"] != 2025]
+        if "Interest Expense (billions)" in btf.columns:
+            _stacked_area(btf, "Fiscal Year", "Expense Type Description", "Interest Expense (billions)", "Interest Expense (billions)", viz_p / "by_type_billions_fy.png")
+        if "Interest Expense (% GDP)" in btf.columns:
+            _stacked_area(btf, "Fiscal Year", "Expense Type Description", "Interest Expense (% GDP)", "Interest Expense (% GDP)", viz_p / "by_type_pct_gdp_fy.png")
+
+
+def copy_source_data(files: list[Path | str], dest_dir: Path | str) -> None:
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    for f in files:
+        fpath = Path(f)
+        if fpath.exists():
+            shutil.copy2(fpath, dest / fpath.name)
 
 
 if __name__ == "__main__":
