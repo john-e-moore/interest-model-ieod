@@ -19,7 +19,12 @@ def aggregate_model_cy(monthly_df: pd.DataFrame) -> pd.DataFrame:
     # Use min_count=1 for sums to avoid coercing all-NaN groups to 0.0
     interest_total = grouped['NetInt'].sum(min_count=1)
     debt_avg = grouped['Debt'].mean()
-    gdp_total = grouped['nominal_gdp'].sum(min_count=1) if 'nominal_gdp' in monthly_df.columns else 0.0
+    # `nominal_gdp` in monthly_df is an annual-level series repeated monthly.
+    # For CY aggregation, convert to a monthly flow by dividing by 12 when summing across months.
+    gdp_total = (
+        grouped['nominal_gdp'].sum(min_count=1) / 12.0
+        if 'nominal_gdp' in monthly_df.columns else 0.0
+    )
 
     out = pd.DataFrame({
         'interest_total': interest_total,
@@ -38,7 +43,11 @@ def aggregate_model_fy(monthly_df: pd.DataFrame) -> pd.DataFrame:
     grouped = monthly_df.groupby(years)
     interest_total = grouped['NetInt'].sum(min_count=1)
     debt_avg = grouped['Debt'].mean()
-    gdp_total = grouped['nominal_gdp'].sum(min_count=1) if 'nominal_gdp' in monthly_df.columns else 0.0
+    # Convert annual-level monthly `nominal_gdp` to FY flow by dividing by 12 when summing.
+    gdp_total = (
+        grouped['nominal_gdp'].sum(min_count=1) / 12.0
+        if 'nominal_gdp' in monthly_df.columns else 0.0
+    )
 
     out = pd.DataFrame({
         'interest_total': interest_total,
