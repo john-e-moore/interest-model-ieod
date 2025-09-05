@@ -9,6 +9,7 @@ try:
         derive_calendar_and_fiscal,
         find_latest_interest_file,
         load_and_expand_gdp,
+        join_gdp,
     )
 except Exception:  # pragma: no cover - pytest path setup fallback
     from historical import (
@@ -16,6 +17,7 @@ except Exception:  # pragma: no cover - pytest path setup fallback
         derive_calendar_and_fiscal,
         find_latest_interest_file,
         load_and_expand_gdp,
+        join_gdp,
     )
 
 
@@ -86,3 +88,28 @@ def test_load_and_expand_gdp_filters_and_interpolates_monthly(tmp_path: Path) ->
     assert feb == 10100
     assert mar == 10200
     assert apr == 10300
+
+
+def test_join_gdp_matches_by_calendar_year_and_month() -> None:
+    # Interest months spanning Jan-Apr 2026
+    interest = pd.DataFrame({
+        "Record Date": pd.to_datetime(["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30"]),
+        "Current Month Expense Amount": [100.0, 110.0, 120.0, 130.0],
+        "Expense Type Description": ["A", "B", "C", "D"],
+    })
+    interest = derive_calendar_and_fiscal(interest)
+    # Minimal GDP monthly
+    gdp = pd.DataFrame({
+        "Date": pd.to_datetime(["2026-01-01", "2026-02-01", "2026-03-01", "2026-04-01"]),
+        "GDP_billion": [40000.0, 41000.0, 42000.0, 43000.0],
+    })
+    gdp["Year"] = gdp["Date"].dt.year
+    gdp["Month"] = gdp["Date"].dt.month
+
+    joined = join_gdp(interest, gdp)
+    assert "GDP_billion" in joined.columns
+    # Check match by Calendar Year and Month
+    assert float(joined.loc[joined["Month"] == 1, "GDP_billion"].iloc[0]) == 40000.0
+    assert float(joined.loc[joined["Month"] == 2, "GDP_billion"].iloc[0]) == 41000.0
+    assert float(joined.loc[joined["Month"] == 3, "GDP_billion"].iloc[0]) == 42000.0
+    assert float(joined.loc[joined["Month"] == 4, "GDP_billion"].iloc[0]) == 43000.0

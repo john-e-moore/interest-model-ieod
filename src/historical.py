@@ -194,9 +194,38 @@ def load_and_expand_gdp(gdp_path: Path | str) -> pd.DataFrame:
 
 
 # -----------------------------
-# Dev CSV writer and sanity
+# Step 3: Join GDP to Interest Expense
 # -----------------------------
 
+def join_gdp(interest_df: pd.DataFrame, gdp_df: pd.DataFrame) -> pd.DataFrame:
+    """Join monthly GDP onto interest expense by calendar Year and Month.
+
+    Drops rows where GDP is missing. Caller may choose to warn instead.
+    """
+    req_interest_cols = {"Calendar Year", "Month"}
+    req_gdp_cols = {"Year", "Month", "GDP_billion"}
+    if not req_interest_cols.issubset(set(interest_df.columns)):
+        raise ValueError("interest_df missing required calendar columns")
+    if not req_gdp_cols.issubset(set(gdp_df.columns)):
+        raise ValueError("gdp_df missing required columns")
+
+    merged = interest_df.merge(
+        gdp_df[["Year", "Month", "GDP_billion"]],
+        left_on=["Calendar Year", "Month"],
+        right_on=["Year", "Month"],
+        how="left",
+    )
+    # Drop redundant Year
+    if "Year" in merged.columns:
+        merged = merged.drop(columns=["Year"])  # keep Calendar Year from interest_df
+    # Drop rows without GDP coverage
+    merged = merged.dropna(subset=["GDP_billion"]).reset_index(drop=True)
+    return merged
+
+
+# -----------------------------
+# Dev CSV writer and sanity
+# -----------------------------
 def write_temp_csv(df: pd.DataFrame, name: str, out_dir: Path | str) -> Path:
     out_dir_p = Path(out_dir)
     out_dir_p.mkdir(parents=True, exist_ok=True)
@@ -261,6 +290,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also write expanded GDP monthly CSV to the output directory",
     )
+    p.add_argument(
+        "--write-joined",
+        action="store_true",
+        help="Also write interest joined with GDP as temp_joined.csv",
+    )
     return p
 
 
@@ -291,6 +325,14 @@ def main(argv: Optional[list[str]] = None) -> None:
         gdp_monthly = load_and_expand_gdp(gdp_path)
         gdp_temp = write_temp_gdp(gdp_monthly, paths.spreadsheets_dir, name="temp_gdp_monthly.csv")
         print(f"Wrote GDP monthly temp CSV: {gdp_temp}")
+
+    if getattr(args, "write_joined", False):
+        # Ensure we have GDP monthly
+        gdp_path = Path(paths.input_dir) / "GDP.csv"
+        gdp_monthly = load_and_expand_gdp(gdp_path)
+        joined = join_gdp(df1, gdp_monthly)
+        joined_path = write_temp_csv(joined, "temp_joined.csv", paths.spreadsheets_dir)
+        print(f"Wrote joined temp CSV: {joined_path}")
 
 
 if __name__ == "__main__":
