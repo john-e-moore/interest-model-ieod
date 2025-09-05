@@ -8,12 +8,14 @@ try:
         load_interest_expense,
         derive_calendar_and_fiscal,
         find_latest_interest_file,
+        load_and_expand_gdp,
     )
 except Exception:  # pragma: no cover - pytest path setup fallback
     from historical import (
         load_interest_expense,
         derive_calendar_and_fiscal,
         find_latest_interest_file,
+        load_and_expand_gdp,
     )
 
 
@@ -65,3 +67,22 @@ def test_find_latest_interest_file_by_filename_date(tmp_path: Path) -> None:
 
     p = find_latest_interest_file(tmp_path)
     assert p.name == "IntExp_20200101_20250731.csv"
+
+
+def test_load_and_expand_gdp_filters_and_interpolates_monthly(tmp_path: Path) -> None:
+    # Minimal quarterly CSV (billions)
+    csv = tmp_path / "GDP.csv"
+    csv.write_text("observation_date,GDP\n2000-01-01,10000\n2000-04-01,10300\n")
+    df = load_and_expand_gdp(csv)
+    # Expect months Jan..Apr 2000
+    sub = df[(df["Year"] == 2000) & (df["Month"].isin([1, 2, 3, 4]))].copy()
+    assert list(sub["Month"]) == [1, 2, 3, 4]
+    # Linear interpolation in-between months only
+    jan = float(sub.loc[sub["Month"] == 1, "GDP_billion"].iloc[0])
+    feb = float(sub.loc[sub["Month"] == 2, "GDP_billion"].iloc[0])
+    mar = float(sub.loc[sub["Month"] == 3, "GDP_billion"].iloc[0])
+    apr = float(sub.loc[sub["Month"] == 4, "GDP_billion"].iloc[0])
+    assert jan == 10000
+    assert feb == 10100
+    assert mar == 10200
+    assert apr == 10300

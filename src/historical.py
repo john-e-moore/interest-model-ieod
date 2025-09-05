@@ -145,6 +145,55 @@ def derive_calendar_and_fiscal(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -----------------------------
+# Step 2: GDP loader and monthly expansion
+# -----------------------------
+
+def load_and_expand_gdp(gdp_path: Path | str) -> pd.DataFrame:
+    """Load quarterly GDP and expand to monthly via linear interpolation.
+
+    Rules per plan:
+    - Restrict to years >= 2000
+    - Ensure quarterly timestamps on first day of quarter
+    - Create monthly index covering min→max quarterly dates; linearly interpolate
+      values for in-between months only (no extrapolation)
+    - Keep GDP in billions (input is already in billions)
+    - Derive `Year` and `Month` for joining later
+    """
+    dfq = pd.read_csv(gdp_path, usecols=["observation_date", "GDP"])  # billions
+    dfq["Date"] = pd.to_datetime(dfq["observation_date"], errors="coerce")
+    dfq = dfq.dropna(subset=["Date"]).copy()
+    dfq = dfq.loc[dfq["Date"].dt.year >= 2000, ["Date", "GDP"]].copy()
+
+    # Normalize to first day of the quarter
+    def quarter_start(ts: pd.Timestamp) -> pd.Timestamp:
+        m = ((ts.month - 1) // 3) * 3 + 1
+        return pd.Timestamp(year=ts.year, month=m, day=1)
+
+    dfq["Date"] = dfq["Date"].apply(quarter_start)
+    dfq = dfq.drop_duplicates(subset=["Date"]).sort_values("Date").reset_index(drop=True)
+
+    if dfq.empty:
+        return pd.DataFrame(columns=["Date", "GDP_billion", "Year", "Month"])  # type: ignore
+
+    # Monthly date range from first to last quarter start
+    first = dfq["Date"].min()
+    last = dfq["Date"].max()
+    monthly_index = pd.date_range(first, last, freq="MS")  # month start
+
+    # Build monthly frame and align quarter values at quarter starts
+    gdf = pd.DataFrame({"Date": monthly_index})
+    gdf = gdf.merge(dfq[["Date", "GDP"]], on="Date", how="left")
+
+    # Interpolate linearly by index position (equal monthly steps), interior only
+    gdf["GDP_billion"] = gdf["GDP"].interpolate(method="linear", limit_area="inside")
+    gdf.drop(columns=["GDP"], inplace=True)
+
+    gdf["Year"] = gdf["Date"].dt.year.astype(int)
+    gdf["Month"] = gdf["Date"].dt.month.astype(int)
+    return gdf
+
+
+# -----------------------------
 # Dev CSV writer and sanity
 # -----------------------------
 
@@ -180,6 +229,14 @@ def reload_and_sanity_check_temp_csv(path: Path | str) -> None:
         raise AssertionError("Found invalid month values outside 1..12")
 
 
+def write_temp_gdp(df: pd.DataFrame, out_dir: Path | str, name: str = "temp_gdp_monthly.csv") -> Path:
+    out_dir_p = Path(out_dir)
+    out_dir_p.mkdir(parents=True, exist_ok=True)
+    path = out_dir_p / name
+    df.to_csv(path, index=False)
+    return path
+
+
 # -----------------------------
 # CLI
 # -----------------------------
@@ -198,6 +255,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         type=str,
         default="temp_interest_raw.csv",
         help="Filename for the development CSV",
+    )
+    p.add_argument(
+        "--write-gdp",
+        action="store_true",
+        help="Also write expanded GDP monthly CSV to the output directory",
     )
     return p
 
@@ -223,6 +285,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         f"rows={len(df1)}",
         f"date_range={[df1['Record Date'].min(), df1['Record Date'].max()]}",
     )
+
+    if args.write_gdp:
+        gdp_path = Path(paths.input_dir) / "GDP.csv"
+        gdp_monthly = load_and_expand_gdp(gdp_path)
+        gdp_temp = write_temp_gdp(gdp_monthly, paths.spreadsheets_dir, name="temp_gdp_monthly.csv")
+        print(f"Wrote GDP monthly temp CSV: {gdp_temp}")
 
 
 if __name__ == "__main__":
