@@ -44,6 +44,16 @@
      - Add `Interest Expense (billions)` = `Interest Expense / 1_000_000_000`
      - Add `Interest Expense (% GDP)` = `100 * Interest Expense (billions) / GDP_billion`
 
+### Stepwise Checkpoints (Development Workflow)
+- After each core processing step:
+  - For every table created or modified, write a CSV in `output/historical/spreadsheets/` prefixed with `temp_` (e.g., `temp_interest_raw.csv`, `temp_joined.csv`, `temp_agg_cy.csv`).
+  - Reload that CSV and sanity-check:
+    - Row/column counts look reasonable
+    - No inappropriate NaNs or all-zero columns
+    - Values are in the expected order of magnitude
+  - If sanity passes, write/update tests for that step and request review.
+  - Do not proceed to the next core step until review approval is given.
+
 ### Outputs
 - **Spreadsheets (CSVs)**: one CSV per aggregation in `output/historical/spreadsheets/`
   - Clear, deterministic filenames, e.g., `summary_cy.csv`, `summary_fy.csv`, `by_month_cy.csv`, `by_type_fy.csv`, etc.
@@ -63,12 +73,15 @@
 - `build_aggregations(df) -> Dict[str, DataFrame]`
 - `add_unit_columns(df) -> DataFrame` (millions, billions, % GDP)
 - `write_csvs(tables, out_dir)`
+- `write_temp_csv(table, name, out_dir)` (dev-only)
+- `reload_and_sanity_check_temp_csv(path) -> None` (dev-only)
 - `write_excel(tables, excel_path)`
 - `plot_line_and_area_charts(tables, viz_dir)`
 - `copy_source_data(files, dest_dir)`
 - `main()` to orchestrate; allow running via `python -m src.historical`
 
 ### Testing Plan (`tests/test_historical.py`)
+- **Development gating**: After each core step passes sanity on `temp_*.csv` and after review approval, implement or update the tests for that step before moving on.
 - **Fixtures**: in-memory or temp files with small synthetic datasets
 - **Unit tests**:
   - Filters only keep `INTEREST EXPENSE ON PUBLIC ISSUES`
