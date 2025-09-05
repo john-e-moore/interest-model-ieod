@@ -224,6 +224,70 @@ def join_gdp(interest_df: pd.DataFrame, gdp_df: pd.DataFrame) -> pd.DataFrame:
 
 
 # -----------------------------
+# Step 4: Aggregations and unit columns
+# -----------------------------
+
+def add_unit_columns(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["Interest Expense"] = out["Current Month Expense Amount"].astype(float)
+    out["Interest Expense (millions)"] = out["Interest Expense"] / 1_000_000.0
+    out["Interest Expense (billions)"] = out["Interest Expense"] / 1_000_000_000.0
+    # % GDP uses billions
+    if "GDP_billion" in out.columns:
+        with pd.option_context('mode.use_inf_as_na', True):
+            out["Interest Expense (% GDP)"] = 100.0 * (
+                out["Interest Expense (billions)"] / out["GDP_billion"].astype(float)
+            )
+    return out
+
+
+def _agg_sum(df: pd.DataFrame, group_cols: list[str]) -> pd.DataFrame:
+    grouped = (
+        df.groupby(group_cols, dropna=False)["Current Month Expense Amount"].sum().reset_index()
+    )
+    grouped = grouped.rename(columns={"Current Month Expense Amount": "Interest Expense"})
+
+    # Attach GDP using distinct month-level values to avoid type-weighting bias
+    if "GDP_billion" in df.columns:
+        unique_months = df[["Calendar Year", "Fiscal Year", "Month", "GDP_billion"]].drop_duplicates()
+        if set(["Calendar Year", "Month"]).issubset(group_cols):
+            # Use exact monthly GDP
+            gdp_map = unique_months[["Calendar Year", "Month", "GDP_billion"]]
+            grouped = grouped.merge(gdp_map, on=["Calendar Year", "Month"], how="left")
+        elif "Calendar Year" in group_cols and "Month" not in group_cols:
+            gdp_avg = unique_months.groupby(["Calendar Year"], dropna=False)["GDP_billion"].mean().reset_index()
+            grouped = grouped.merge(gdp_avg, on=["Calendar Year"], how="left")
+        elif "Fiscal Year" in group_cols and "Month" not in group_cols:
+            gdp_avg = unique_months.groupby(["Fiscal Year"], dropna=False)["GDP_billion"].mean().reset_index()
+            grouped = grouped.merge(gdp_avg, on=["Fiscal Year"], how="left")
+        elif set(["Fiscal Year", "Month"]).issubset(group_cols):
+            gdp_map = unique_months.groupby(["Fiscal Year", "Month"], dropna=False)["GDP_billion"].mean().reset_index()
+            grouped = grouped.merge(gdp_map, on=["Fiscal Year", "Month"], how="left")
+
+    grouped["Interest Expense (millions)"] = grouped["Interest Expense"] / 1_000_000.0
+    grouped["Interest Expense (billions)"] = grouped["Interest Expense"] / 1_000_000_000.0
+    if "GDP_billion" in grouped.columns:
+        grouped["Interest Expense (% GDP)"] = 100.0 * (
+            grouped["Interest Expense (billions)"] / grouped["GDP_billion"].astype(float)
+        )
+    return grouped
+
+
+def build_aggregations(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    tables: dict[str, pd.DataFrame] = {}
+    # Granular monthly tables
+    tables["by_month_cy"] = _agg_sum(df, ["Calendar Year", "Month"]).sort_values(["Calendar Year", "Month"]).reset_index(drop=True)
+    tables["by_month_fy"] = _agg_sum(df, ["Fiscal Year", "Month"]).sort_values(["Fiscal Year", "Month"]).reset_index(drop=True)
+    # By type
+    if "Expense Type Description" in df.columns:
+        tables["by_type_cy"] = _agg_sum(df, ["Calendar Year", "Expense Type Description"]).sort_values(["Calendar Year", "Expense Type Description"]).reset_index(drop=True)
+        tables["by_type_fy"] = _agg_sum(df, ["Fiscal Year", "Expense Type Description"]).sort_values(["Fiscal Year", "Expense Type Description"]).reset_index(drop=True)
+    # Yearly summaries
+    tables["summary_cy"] = _agg_sum(df, ["Calendar Year"]).sort_values(["Calendar Year"]).reset_index(drop=True)
+    tables["summary_fy"] = _agg_sum(df, ["Fiscal Year"]).sort_values(["Fiscal Year"]).reset_index(drop=True)
+    return tables
+
+# -----------------------------
 # Dev CSV writer and sanity
 # -----------------------------
 def write_temp_csv(df: pd.DataFrame, name: str, out_dir: Path | str) -> Path:
@@ -295,6 +359,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also write interest joined with GDP as temp_joined.csv",
     )
+    p.add_argument(
+        "--write-aggs",
+        action="store_true",
+        help="Also write aggregated tables as temp_agg_*.csv",
+    )
     return p
 
 
@@ -333,6 +402,15 @@ def main(argv: Optional[list[str]] = None) -> None:
         joined = join_gdp(df1, gdp_monthly)
         joined_path = write_temp_csv(joined, "temp_joined.csv", paths.spreadsheets_dir)
         print(f"Wrote joined temp CSV: {joined_path}")
+
+    if getattr(args, "write_aggs", False):
+        gdp_path = Path(paths.input_dir) / "GDP.csv"
+        gdp_monthly = load_and_expand_gdp(gdp_path)
+        joined = join_gdp(df1, gdp_monthly)
+        tables = build_aggregations(joined)
+        for name, tdf in tables.items():
+            outp = write_temp_csv(tdf, f"temp_{name}.csv", paths.spreadsheets_dir)
+            print(f"Wrote aggregation CSV: {outp}")
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ try:
         find_latest_interest_file,
         load_and_expand_gdp,
         join_gdp,
+        build_aggregations,
     )
 except Exception:  # pragma: no cover - pytest path setup fallback
     from historical import (
@@ -18,6 +19,7 @@ except Exception:  # pragma: no cover - pytest path setup fallback
         find_latest_interest_file,
         load_and_expand_gdp,
         join_gdp,
+        build_aggregations,
     )
 
 
@@ -113,3 +115,38 @@ def test_join_gdp_matches_by_calendar_year_and_month() -> None:
     assert float(joined.loc[joined["Month"] == 2, "GDP_billion"].iloc[0]) == 41000.0
     assert float(joined.loc[joined["Month"] == 3, "GDP_billion"].iloc[0]) == 42000.0
     assert float(joined.loc[joined["Month"] == 4, "GDP_billion"].iloc[0]) == 43000.0
+
+
+def test_aggregations_and_unit_columns() -> None:
+    # Build a tiny joined dataset
+    base = pd.DataFrame({
+        "Record Date": pd.to_datetime(["2020-01-31", "2020-01-31", "2020-02-29"]),
+        "Current Month Expense Amount": [100.0, 50.0, 200.0],
+        "Expense Type Description": ["A", "B", "A"],
+    })
+    base = derive_calendar_and_fiscal(base)
+    gdp = pd.DataFrame({
+        "Date": pd.to_datetime(["2020-01-01", "2020-02-01"]),
+        "GDP_billion": [1000.0, 1100.0],
+    })
+    gdp["Year"] = gdp["Date"].dt.year
+    gdp["Month"] = gdp["Date"].dt.month
+    joined = join_gdp(base, gdp)
+    tables = build_aggregations(joined)
+
+    # Summary CY for 2020: total = 100 + 50 + 200 = 350
+    scy = tables["summary_cy"]
+    val_total = float(scy.loc[scy["Calendar Year"] == 2020, "Interest Expense"].iloc[0])
+    assert val_total == 350.0
+    # Billions = 0.00000035 and % GDP uses average GDP across months (1050)
+    gdp_avg = float(scy.loc[scy["Calendar Year"] == 2020, "GDP_billion"].iloc[0])
+    assert gdp_avg == 1050.0
+    pct = float(scy.loc[scy["Calendar Year"] == 2020, "Interest Expense (% GDP)"].iloc[0])
+    assert abs(pct - (100.0 * (0.00000035 / 1050.0))) < 1e-10
+
+    # By type CY: For month Jan A=100, B=50; Feb A=200
+    bt = tables["by_type_cy"]
+    a_2020 = float(bt[(bt["Calendar Year"] == 2020) & (bt["Expense Type Description"] == "A")]["Interest Expense"].sum())
+    b_2020 = float(bt[(bt["Calendar Year"] == 2020) & (bt["Expense Type Description"] == "B")]["Interest Expense"].sum())
+    assert a_2020 == 300.0
+    assert b_2020 == 50.0
